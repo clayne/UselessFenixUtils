@@ -53,16 +53,72 @@ namespace FenixUtils
 {
 	namespace Geom
 	{
-		RE::NiPoint3& HK2NI(RE::NiPoint3& ans, RE::hkVector4 const& val)
+		RE::NiPoint3 HK2NI(RE::hkVector4 const& val)
 		{
-			ans = { val.quad.m128_f32[0], val.quad.m128_f32[1], val.quad.m128_f32[2] };
+			RE::NiPoint3 ans = { val.quad.m128_f32[0], val.quad.m128_f32[1], val.quad.m128_f32[2] };
 			ans *= RE::bhkWorld::GetWorldScaleInverse();
+			return ans;
+		}
+
+		RE::NiTransform HK2NI(RE::hkTransform const& val)
+		{
+			RE::NiTransform result;
+
+			result.rotate = HK2NI(val.rotation);
+			result.translate = HK2NI(val.translation);
+			result.scale = 1.0f;
+
+			return result;
+		}
+
+		RE::NiMatrix3 HK2NI(RE::hkMatrix3 const& val)
+		{
+			RE::NiMatrix3 ans;
+
+			ans.entry[0][0] = val.col0.quad.m128_f32[0];
+			ans.entry[1][0] = val.col0.quad.m128_f32[1];
+			ans.entry[2][0] = val.col0.quad.m128_f32[2];
+
+			ans.entry[0][1] = val.col1.quad.m128_f32[0];
+			ans.entry[1][1] = val.col1.quad.m128_f32[1];
+			ans.entry[2][1] = val.col1.quad.m128_f32[2];
+
+			ans.entry[0][2] = val.col2.quad.m128_f32[0];
+			ans.entry[1][2] = val.col2.quad.m128_f32[1];
+			ans.entry[2][2] = val.col2.quad.m128_f32[2];
+
 			return ans;
 		}
 
 		RE::NiPoint3& HK2NI_noscale(RE::NiPoint3& ans, RE::hkVector4 const& val)
 		{
 			ans = { val.quad.m128_f32[0], val.quad.m128_f32[1], val.quad.m128_f32[2] };
+			return ans;
+		}
+
+		RE::NiPoint3 HK2NI_noscale(RE::hkVector4 const& val)
+		{
+			return { val.quad.m128_f32[0], val.quad.m128_f32[1], val.quad.m128_f32[2] };
+		}
+
+		RE::hkVector4& NI2HK(RE::hkVector4& ans, const RE::NiPoint3& val)
+		{
+			float mul = RE::bhkWorld::GetWorldScale();
+			ans.quad.m128_f32[0] = val.x * mul;
+			ans.quad.m128_f32[1] = val.y * mul;
+			ans.quad.m128_f32[2] = val.z * mul;
+			ans.quad.m128_f32[3] = 0;
+
+			return ans;
+		}
+
+		RE::hkVector4& NI2HK_noscale(RE::hkVector4& ans, const RE::NiPoint3& val)
+		{
+			ans.quad.m128_f32[0] = val.x;
+			ans.quad.m128_f32[1] = val.y;
+			ans.quad.m128_f32[2] = val.z;
+			ans.quad.m128_f32[3] = 0;
+
 			return ans;
 		}
 
@@ -391,12 +447,82 @@ namespace FenixUtils
 
 	namespace Behavior
 	{
-		RE::hkbNode* lookup_node(RE::hkbBehaviorGraph* root_graph, const char* name)
+		void MyGraphTraverser::push(RE::hkbNode* node)
 		{
-			RE::BShkbUtils::GraphTraverser traverser(6, root_graph);
+			if (visited.count(node) == 0) {
+				visited.insert(node);
+				queue.push_back(node);
+			}
+		}
+		
+		MyGraphTraverser::MyGraphTraverser(RE::GET_CHILDREN_FLAGS flags, RE::hkbNode* start) :
+			flags(flags), visited{ start }, queue{ start }
+		{
+			assert(start->isGraph());
+		}
+
+		RE::hkbBehaviorGraph* MyGraphTraverser::cur_graph()
+		{
+			assert(!graphs.empty());
+			return graphs.back();
+		}
+		
+		RE::hkbNode* MyGraphTraverser::Next()
+		{
+			auto ans = queue.back();
+			queue.pop_back();
+		
+			if (ans == nullptr) {
+				if (queue.empty())
+					return nullptr;
+		
+				ans = queue.back();
+				queue.pop_back();
+		
+				graphs.pop_back();
+			}
+		
+			if (int childs = ans->getMaxNumChildren(flags); childs > 0) {
+				RE::hkArray<RE::hkbNodeChildInfo> _childs_info;
+				_childs_info.reserve(childs);
+				RE::hkbNode::ChildrenInfo childs_info(_childs_info);
+				ans->getChildren(flags, childs_info);
+		
+				if (ans->isGraph()) {
+					graphs.push_back(static_cast<RE::hkbBehaviorGraph*>(ans));
+					queue.push_back(nullptr);
+				}
+		
+				for (int32_t i = childs_info.childInfos.size() - 1; i >= 0; --i) {
+					push(childs_info.childInfos[i].node);
+				}
+			}
+		
+			return ans;
+		}
+
+		RE::hkbBehaviorGraph* LoadBehaviorHelper(const char* folder_path, const char* filename, RE::BSResourceAssetLoader& loader,
+			RE::BSScrapArray<RE::hkbBehaviorGraph*>& hgraphs)
+		{
+			return _generic_foo_<63030, RE::hkbBehaviorGraph*(const char* f, const char* n, RE::BSResourceAssetLoader& l,
+											RE::BSScrapArray<RE::hkbBehaviorGraph*>&)>::eval(folder_path, filename, loader,
+				hgraphs);
+		}
+
+		RE::hkbNode* lookup_node(RE::hkbBehaviorGraph* root_graph, const char* name, const char* class_name)
+		{
+			RE::BShkbUtils::GraphTraverser traverser(RE::hkbNode::GetChildrenFlagBits::kIgnoreReferencedBehaviour, root_graph);
 			for (auto node = traverser.Next(); node; node = traverser.Next()) {
-				if (node->name.c_str() && !std::strcmp(node->name.c_str(), name))
-					return node;
+				if (node->name.c_str() && !std::strcmp(node->name.c_str(), name)) {
+					if (class_name) {
+						if (auto clas = node->GetClassType()) {
+							if (!std::strcmp(clas->name, class_name))
+								return node;
+						}
+					} else {
+						return node;
+					}
+				}
 			}
 			return nullptr;
 		}
@@ -420,24 +546,22 @@ namespace FenixUtils
 			}
 			return RE::hkbEventBase::SystemEventIDs_::kNull;
 		}
-
-		const char* get_event_name_implicit(RE::hkbBehaviorGraph* graph, int32_t implicit_id)
+		
+		const char* get_event_name_internal(RE::hkbBehaviorGraph* graph, int32_t internal_id)
 		{
-			if (implicit_id == RE::hkbEventBase::SystemEventIDs_::kNull)
+			if (internal_id == RE::hkbEventBase::SystemEventIDs_::kNull)
 				return nullptr;
-
-			return graph->data->stringData->eventNames[static_cast<uint32_t>(implicit_id)].c_str();
+		
+			return graph->data->stringData->eventNames[static_cast<uint32_t>(internal_id)].c_str();
 		}
-
-		const char* get_event_name_explicit(RE::hkbBehaviorGraph* graph, int32_t explicit_id)
+		
+		const char* get_event_name_external(RE::hkbBehaviorGraph* graph, int32_t external_id)
 		{
 			if (auto map = graph->eventIDMap.get()) {
-				auto implicit_id = map->map.getWithDefault(static_cast<int64_t>(explicit_id) + 1, -1);
-				if (implicit_id != -1) {
-					return get_event_name_implicit(graph, static_cast<int32_t>(implicit_id));
-				}
+				auto internal_id = map->externalToInternalMap.getWithDefault(static_cast<int64_t>(external_id) + 1, -1);
+				return get_event_name_internal(graph, static_cast<int32_t>(internal_id));
 			}
-
+		
 			return nullptr;
 		}
 
@@ -645,7 +769,7 @@ namespace FenixUtils
 
 	float get_total_av(RE::Actor* a, RE::ActorValue av)
 	{
-		float permanent = a->GetPermanentActorValue(av);
+		float permanent = a->GetActorValueMax(av);
 		float temporary = Actor__GetActorValueModifier(a, RE::ACTOR_VALUE_MODIFIER::kTemporary, av);
 		return permanent + temporary;
 	}
@@ -719,7 +843,7 @@ namespace FenixUtils
 	float getAV_pers(RE::Actor* a, RE::ActorValue av)
 	{
 		float all = get_total_av(a, av);
-		if (all < 0.000001)
+		if (all < 0.000001f)
 			return 1.0f;
 
 		float cur = a->GetActorValue(av);
@@ -837,5 +961,117 @@ auto fmt::formatter<RE::NiQuaternion>::format(const RE::NiQuaternion& c, format_
 	out = formatter<float>::format(c.z, ctx);
 
 	out = fmt::format_to(out, "]>");
+	return out;
+}
+
+auto fmt::formatter<RE::hkVector4>::format(const RE::hkVector4& c, format_context& ctx) const -> format_context::iterator
+{
+	auto out = ctx.out();
+	*out = '[';
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.quad.m128_f32[0], ctx);
+
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.quad.m128_f32[1], ctx);
+
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.quad.m128_f32[2], ctx);
+
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.quad.m128_f32[3], ctx);
+
+	*out = ']';
+	return out;
+}
+
+auto fmt::formatter<RE::hkQuaternion>::format(const RE::hkQuaternion& c, format_context& ctx) const -> format_context::iterator
+{
+	auto out = ctx.out();
+	*out = '<';
+	//*out = '[';
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.vec.quad.m128_f32[0], ctx);
+
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.vec.quad.m128_f32[1], ctx);
+
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.vec.quad.m128_f32[2], ctx);
+
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.vec.quad.m128_f32[3], ctx);
+
+	out = fmt::format_to(out, ">");
+	return out;
+}
+
+auto fmt::formatter<RE::hkQsTransform>::format(const RE::hkQsTransform& c, format_context& ctx) const -> format_context::iterator
+{
+	auto out = ctx.out();
+	*out = '{';
+	*out = '[';
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.translation.quad.m128_f32[0], ctx);
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.translation.quad.m128_f32[1], ctx);
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.translation.quad.m128_f32[2], ctx);
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.translation.quad.m128_f32[3], ctx);
+	out = fmt::format_to(out, "] <");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.rotation.vec.quad.m128_f32[0], ctx);
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.rotation.vec.quad.m128_f32[1], ctx);
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.rotation.vec.quad.m128_f32[2], ctx);
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.rotation.vec.quad.m128_f32[3], ctx);
+	out = fmt::format_to(out, ">, {{");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.scale.quad.m128_f32[0], ctx);
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.scale.quad.m128_f32[1], ctx);
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.scale.quad.m128_f32[2], ctx);
+	out = fmt::format_to(out, ", ");
+
+	ctx.advance_to(out);
+	out = formatter<float>::format(c.scale.quad.m128_f32[3], ctx);
+
+	out = fmt::format_to(out, "}}}}");
 	return out;
 }

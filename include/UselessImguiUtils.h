@@ -69,8 +69,8 @@ namespace ImguiUtils
 		{
 			auto& trampoline = SKSE::GetTrampoline();
 
-			_DispatchInputEvent = trampoline.write_call<5>(REL::ID(67315).address() + 0x7B, DispatchInputEvent);
-			_Present = trampoline.write_call<5>(REL::ID(75461).address() + 0x9, Present);
+			_DispatchInputEvent = trampoline.write_call<5>(RELOCATION_ID(67315, 68617).address() + 0x7B, DispatchInputEvent);
+			_Present = trampoline.write_call<5>(RELOCATION_ID(75461, 77246).address() + 0x9, Present);
 		}
 
 		static void init_impl()

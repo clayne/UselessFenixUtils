@@ -9,7 +9,7 @@
 #include <glm/glm.hpp>
 
 #include "json/json.h"
-#include "magic_enum.hpp"
+#include "magic_enum/magic_enum.hpp"
 
 #ifdef WITH_IMGUI
 #include "UselessImguiUtils.h"
@@ -70,8 +70,13 @@ namespace FenixUtils
 		// Axis: y -- forward, x -- right, z angle = 0 => y = 1, x = 0.
 		// Angles: x:-pi/2 (up)..pi/2 (down), y:0, z:0 (along y)..2pi
 
-		RE::NiPoint3& HK2NI(RE::NiPoint3& ans, RE::hkVector4 const& val);
+		RE::NiPoint3 HK2NI(RE::hkVector4 const& val);
+		RE::NiTransform HK2NI(RE::hkTransform const& val);
+		RE::NiMatrix3 HK2NI(RE::hkMatrix3 const& val);
 		RE::NiPoint3& HK2NI_noscale(RE::NiPoint3& ans, RE::hkVector4 const& val);
+		RE::NiPoint3 HK2NI_noscale(RE::hkVector4 const& val);
+		RE::hkVector4& NI2HK(RE::hkVector4& ans, const RE::NiPoint3& val);
+		RE::hkVector4& NI2HK_noscale(RE::hkVector4& ans, const RE::NiPoint3& val);
 
 		float NiASin(float alpha);
 		RE::NiPoint3 raycast(const RE::NiPoint3& from, const RE::NiPoint3& to, uint32_t filter_info);
@@ -154,12 +159,21 @@ namespace FenixUtils
 		std::string getString(const ::Json::Value& jobj, const std::string& field_name);
 		std::string mb_getString(const ::Json::Value& jobj, const std::string& field_name);
 		float getFloat(const ::Json::Value& jobj, const std::string& field_name);
+		
 		template <float default_val = 0.0f>
 		float mb_getFloat(const ::Json::Value& jobj, const std::string& field_name)
 		{
 			return jobj.isMember(field_name) ? getFloat(jobj, field_name) : default_val;
 		}
+
 		bool getBool(const ::Json::Value& jobj, const std::string& field_name);
+
+		template <bool default_val = false>
+		bool mb_getBool(const ::Json::Value& jobj, const std::string& field_name)
+		{
+			return jobj.isMember(field_name) ? getBool(jobj, field_name) : default_val;
+		}
+
 		uint32_t getUint32(const ::Json::Value& jobj, const std::string& field_name);
 
 		template <typename Enum>
@@ -218,11 +232,33 @@ namespace FenixUtils
 
 	namespace Behavior
 	{
-		RE::hkbNode* lookup_node(RE::hkbBehaviorGraph* root_graph, const char* name);
+		class MyGraphTraverser
+		{
+			RE::GET_CHILDREN_FLAGS flags;
+			std::set<RE::hkbNode*> visited;
+			std::vector<RE::hkbNode*> queue;
+			std::vector<RE::hkbBehaviorGraph*> graphs{};
+		
+			void push(RE::hkbNode* node);
+		
+		public:
+			MyGraphTraverser() = delete;
+			MyGraphTraverser(const MyGraphTraverser&) = delete;
+			MyGraphTraverser& operator=(const MyGraphTraverser&) = delete;
+		
+			MyGraphTraverser(RE::GET_CHILDREN_FLAGS flags, RE::hkbNode* start);
+		
+			RE::hkbBehaviorGraph* cur_graph();
+			RE::hkbNode* Next();
+		};
+
+		RE::hkbBehaviorGraph* LoadBehaviorHelper(const char* folder_path, const char* filename, RE::BSResourceAssetLoader& loader,
+			RE::BSScrapArray<RE::hkbBehaviorGraph*>& hgraphs);
+		RE::hkbNode* lookup_node(RE::hkbBehaviorGraph* root_graph, const char* name, const char* class_name = nullptr);
 		int32_t get_implicit_id_variable(RE::hkbBehaviorGraph* graph, const char* name);
 		int32_t get_implicit_id_event(RE::hkbBehaviorGraph* graph, const char* name);
-		const char* get_event_name_implicit(RE::hkbBehaviorGraph* graph, int32_t implicit_id);
-		const char* get_event_name_explicit(RE::hkbBehaviorGraph* graph, int32_t explicit_id);
+		const char* get_event_name_internal(RE::hkbBehaviorGraph* graph, int32_t internal_id);
+		const char* get_event_name_external(RE::hkbBehaviorGraph* graph, int32_t external_id);
 		const char* get_variable_name(RE::hkbBehaviorGraph* graph, int32_t ind);
 	}
 
@@ -402,6 +438,21 @@ template <>
 struct fmt::formatter<RE::NiQuaternion> : formatter<float>
 {
 	format_context::iterator format(const RE::NiQuaternion& c, format_context& ctx) const;
+};
+template <>
+struct fmt::formatter<RE::hkVector4> : formatter<float>
+{
+	format_context::iterator format(const RE::hkVector4& c, format_context& ctx) const;
+};
+template <>
+struct fmt::formatter<RE::hkQuaternion> : formatter<float>
+{
+	format_context::iterator format(const RE::hkQuaternion& c, format_context& ctx) const;
+};
+template <>
+struct fmt::formatter<RE::hkQsTransform> : formatter<float>
+{
+	format_context::iterator format(const RE::hkQsTransform& c, format_context& ctx) const;
 };
 
 constexpr uint32_t hash(const char* data, size_t const size) noexcept

@@ -27,6 +27,10 @@ namespace DebugRenderUtils
 			bool drawOnTop = false);
 		void draw_line0(const RE::NiPoint3& start, const RE::NiPoint3& end, glm::vec4 color = Colors::RED,
 			bool drawOnTop = false);
+		void draw_vector(const RE::NiPoint3& start, const RE::NiPoint3& V, float len = 1.0f, glm::vec4 color = Colors::RED, float duration = 3.0f,
+			bool drawOnTop = false);
+		void draw_vector0(const RE::NiPoint3& start, const RE::NiPoint3& V, float len = 1.0f, glm::vec4 color = Colors::RED,
+			bool drawOnTop = false);
 		void draw_sphere(const RE::NiPoint3& center, float radius, glm::vec4 color = Colors::RED, float duration = 3.0f,
 			bool drawOnTop = false);
 		void draw_sphere0(const RE::NiPoint3& center, float radius, glm::vec4 color = Colors::RED, bool drawOnTop = false);

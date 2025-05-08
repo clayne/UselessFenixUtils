@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <winrt/base.h>
+#include "UselessDebugRenderUtils.h"
 #pragma comment(lib, "D3D11.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 
@@ -1395,6 +1396,17 @@ PS_OUTPUT main(PS_INPUT input) {
 		void draw_line0(const RE::NiPoint3& start, const RE::NiPoint3& end, glm::vec4 color, bool drawOnTop)
 		{
 			draw_line(start, end, color, 0, drawOnTop);
+		}
+
+		void draw_vector(const RE::NiPoint3& start, const RE::NiPoint3& V, float len, glm::vec4 color, float duration,
+			bool drawOnTop)
+		{
+			draw_line(start, start + V * len, color, duration, drawOnTop);
+		}
+
+		void draw_vector0(const RE::NiPoint3& start, const RE::NiPoint3& V, float len, glm::vec4 color, bool drawOnTop)
+		{
+			draw_line0(start, start + V * len, color, drawOnTop);
 		}
 
 		void draw_sphere(const RE::NiPoint3& center, float radius, glm::vec4 color, float duration, bool drawOnTop)
